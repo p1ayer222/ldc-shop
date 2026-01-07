@@ -593,7 +593,7 @@ export async function getUsers(page = 1, pageSize = 20, q = '') {
             points: loginUsers.points,
             lastLoginAt: loginUsers.lastLoginAt,
             createdAt: loginUsers.createdAt,
-            orderCount: sql<number>`count(${orders.orderId})::int`
+            orderCount: sql<number>`count(CASE WHEN ${orders.status} IN ('paid', 'delivered', 'refunded') THEN 1 END)::int`
         })
             .from(loginUsers)
             .leftJoin(orders, eq(loginUsers.userId, orders.userId))
