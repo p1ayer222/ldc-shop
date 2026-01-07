@@ -2,13 +2,13 @@
 
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { products, cards, orders } from "@/lib/db/schema"
+import { products, cards, orders, loginUsers } from "@/lib/db/schema"
 import { cancelExpiredOrders } from "@/lib/db/queries"
 import { generateOrderId, generateSign } from "@/lib/crypto"
 import { eq, sql, and, or } from "drizzle-orm"
 import { cookies } from "next/headers"
 
-export async function createOrder(productId: string, email?: string) {
+export async function createOrder(productId: string, email?: string, usePoints: boolean = false) {
     const session = await auth()
     const user = session?.user
 
@@ -24,6 +24,26 @@ export async function createOrder(productId: string, email?: string) {
         // Best effort cleanup
     }
 
+    // Points Calculation
+    let pointsToUse = 0
+    let finalAmount = Number(product.price)
+
+    if (usePoints && user?.id) {
+        const userRec = await db.query.loginUsers.findFirst({
+            where: eq(loginUsers.userId, user.id),
+            columns: { points: true }
+        })
+        const currentPoints = userRec?.points || 0
+
+        if (currentPoints > 0) {
+            // Logic: 1 Point = 1 Unit of currency
+            pointsToUse = Math.min(currentPoints, Math.ceil(finalAmount))
+            finalAmount = Math.max(0, finalAmount - pointsToUse)
+        }
+    }
+
+    const isZeroPrice = finalAmount <= 0
+
     const ensureCardsReservationColumns = async () => {
         await db.execute(sql`
             ALTER TABLE cards ADD COLUMN IF NOT EXISTS reserved_order_id TEXT;
@@ -32,7 +52,6 @@ export async function createOrder(productId: string, email?: string) {
     }
 
     const ensureCardsIsUsedDefaults = async () => {
-        // Best effort: handle legacy schemas where is_used has no default and existing rows are NULL
         await db.execute(sql`
             ALTER TABLE cards ALTER COLUMN is_used SET DEFAULT FALSE;
             UPDATE cards SET is_used = FALSE WHERE is_used IS NULL;
@@ -70,7 +89,6 @@ export async function createOrder(productId: string, email?: string) {
     }
 
     if (stock <= 0) {
-        // If legacy schema inserted NULL is_used, try backfill once and re-check.
         try {
             const nullUsed = await db.select({ count: sql<number>`count(*)::int` })
                 .from(cards)
@@ -99,6 +117,7 @@ export async function createOrder(productId: string, email?: string) {
             if (currentUserEmail) userConditions.push(eq(orders.email, currentUserEmail))
 
             if (userConditions.length > 0) {
+                // For zero price instant delivery, we must count 'delivered' too (already covered)
                 const countResult = await db.select({ count: sql<number>`count(*)::int` })
                     .from(orders)
                     .where(and(
@@ -115,11 +134,23 @@ export async function createOrder(productId: string, email?: string) {
         }
     }
 
-    // 4. Create Order + Reserve Stock (1 minute)
+    // 4. Create Order + Reserve Stock (1 minute) OR Deliver Immediately
     const orderId = generateOrderId()
 
     const reserveAndCreate = async () => {
         await db.transaction(async (tx) => {
+            // Verify and Deduct Points inside transaction
+            if (pointsToUse > 0) {
+                const updatedUser = await tx.update(loginUsers)
+                    .set({ points: sql`${loginUsers.points} - ${pointsToUse}` })
+                    .where(and(eq(loginUsers.userId, user!.id!), sql`${loginUsers.points} >= ${pointsToUse}`))
+                    .returning({ points: loginUsers.points });
+
+                if (!updatedUser.length) {
+                    throw new Error('insufficient_points');
+                }
+            }
+
             const reservedResult = await tx.execute(sql`
                 UPDATE cards
                 SET reserved_order_id = ${orderId}, reserved_at = NOW()
@@ -132,23 +163,55 @@ export async function createOrder(productId: string, email?: string) {
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
-                RETURNING id
+                RETURNING id, card_key
             `);
 
             if (!reservedResult.rows.length) {
                 throw new Error('stock_locked');
             }
 
-            await tx.insert(orders).values({
-                orderId,
-                productId: product.id,
-                productName: product.name,
-                amount: product.price,
-                email: email || user?.email || null,
-                userId: user?.id || null,
-                username: user?.username || null,
-                status: 'pending'
-            });
+            const cardKey = reservedResult.rows[0].card_key as string;
+            const cardId = reservedResult.rows[0].id as number;
+
+            // If Zero Price: Mark card used and order delivered immediately
+            if (isZeroPrice) {
+                await tx.update(cards).set({
+                    isUsed: true,
+                    usedAt: new Date(),
+                    reservedOrderId: null,
+                    reservedAt: null
+                }).where(eq(cards.id, cardId));
+
+                await tx.insert(orders).values({
+                    orderId,
+                    productId: product.id,
+                    productName: product.name,
+                    amount: finalAmount.toString(), // 0.00
+                    email: email || user?.email || null,
+                    userId: user?.id || null,
+                    username: user?.username || null,
+                    status: 'delivered',
+                    cardKey: cardKey,
+                    paidAt: new Date(),
+                    deliveredAt: new Date(),
+                    tradeNo: 'POINTS_REDEMPTION',
+                    pointsUsed: pointsToUse
+                });
+
+            } else {
+                // Normal Pending Order
+                await tx.insert(orders).values({
+                    orderId,
+                    productId: product.id,
+                    productName: product.name,
+                    amount: finalAmount.toString(),
+                    email: email || user?.email || null,
+                    userId: user?.id || null,
+                    username: user?.username || null,
+                    status: 'pending',
+                    pointsUsed: pointsToUse
+                });
+            }
         });
     };
 
@@ -158,12 +221,16 @@ export async function createOrder(productId: string, email?: string) {
         if (error?.message === 'stock_locked') {
             return { success: false, error: 'buy.stockLocked' };
         }
+        if (error?.message === 'insufficient_points') {
+            return { success: false, error: 'Points mismatch, please try again.' };
+        }
 
+        // Schema retry logic 
         const errorString = JSON.stringify(error);
         const isMissingColumn =
             error?.message?.includes('reserved_order_id') ||
             error?.message?.includes('reserved_at') ||
-            errorString.includes('42703'); // undefined_column
+            errorString.includes('42703');
 
         if (isMissingColumn) {
             await db.execute(sql`
@@ -174,13 +241,21 @@ export async function createOrder(productId: string, email?: string) {
             try {
                 await reserveAndCreate();
             } catch (retryError: any) {
-                if (retryError?.message === 'stock_locked') {
-                    return { success: false, error: 'buy.stockLocked' };
-                }
+                if (retryError?.message === 'stock_locked') return { success: false, error: 'buy.stockLocked' };
+                if (retryError?.message === 'insufficient_points') return { success: false, error: 'Points mismatch' };
                 throw retryError;
             }
         } else {
             throw error;
+        }
+    }
+
+    // If Zero Price, return Success (redirect to order view)
+    if (isZeroPrice) {
+        return {
+            success: true,
+            url: `${process.env.NEXT_PUBLIC_APP_URL || ''}/order/${orderId}`,
+            isZeroPrice: true
         }
     }
 
@@ -195,9 +270,9 @@ export async function createOrder(productId: string, email?: string) {
         type: 'epay',
         out_trade_no: orderId,
         notify_url: `${baseUrl}/api/notify`,
-        return_url: `${baseUrl}/callback/${orderId}`, // Use path-based param to avoid query string stripping
+        return_url: `${baseUrl}/callback/${orderId}`,
         name: product.name,
-        money: Number(product.price).toFixed(2),
+        money: Number(finalAmount).toFixed(2),
         sign_type: 'MD5'
     }
 

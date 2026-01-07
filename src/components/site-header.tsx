@@ -15,6 +15,7 @@ import { SignOutButton } from "@/components/signout-button"
 import { HeaderLogo, HeaderNav, HeaderSearch, HeaderUserMenuItems, LanguageSwitcher } from "@/components/header-client-parts"
 import { ModeToggle } from "@/components/mode-toggle"
 import { getSetting, recordLoginUser } from "@/lib/db/queries"
+import { CheckInButton } from "@/components/checkin-button"
 
 export async function SiteHeader() {
     const session = await auth()
@@ -47,6 +48,7 @@ export async function SiteHeader() {
                 </div>
                 <div className="flex items-center justify-end gap-2 md:gap-3">
                     <nav className="flex items-center space-x-2">
+                        {user && <CheckInButton />}
                         <LanguageSwitcher />
                         {user ? (
                             <DropdownMenu>

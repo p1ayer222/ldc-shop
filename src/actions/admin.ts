@@ -212,6 +212,14 @@ export async function saveLowStockThreshold(raw: string) {
     revalidatePath('/admin')
 }
 
+export async function saveCheckinReward(raw: string) {
+    await checkAdmin()
+    const n = Number.parseInt(String(raw || '').trim(), 10)
+    const value = Number.isFinite(n) && n > 0 ? String(n) : '10'
+    await setSetting('checkin_reward', value)
+    revalidatePath('/admin')
+}
+
 async function ensureCategoriesTable() {
     await db.execute(sql`
         CREATE TABLE IF NOT EXISTS categories (

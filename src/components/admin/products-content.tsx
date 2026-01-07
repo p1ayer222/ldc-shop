@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Eye, EyeOff, ArrowUp, ArrowDown, TrendingUp, ShoppingCart, CreditCard, Package, Users } from "lucide-react"
-import { deleteProduct, toggleProductStatus, reorderProduct, saveShopName, saveLowStockThreshold } from "@/actions/admin"
+import { deleteProduct, toggleProductStatus, reorderProduct, saveShopName, saveLowStockThreshold, saveCheckinReward } from "@/actions/admin"
 import { toast } from "sonner"
 
 interface Product {
@@ -38,15 +38,18 @@ interface AdminProductsContentProps {
     shopName: string | null
     visitorCount: number
     lowStockThreshold: number
+    checkinReward: number
     recentOrders: Array<{ orderId: string; productName: string; amount: string; status: string; createdAt: Date | null }>
 }
 
-export function AdminProductsContent({ products, stats, shopName, visitorCount, lowStockThreshold, recentOrders }: AdminProductsContentProps) {
+export function AdminProductsContent({ products, stats, shopName, visitorCount, lowStockThreshold, checkinReward, recentOrders }: AdminProductsContentProps) {
     const { t } = useI18n()
     const [shopNameValue, setShopNameValue] = useState(shopName || '')
     const [savingShopName, setSavingShopName] = useState(false)
     const [thresholdValue, setThresholdValue] = useState(String(lowStockThreshold || 5))
     const [savingThreshold, setSavingThreshold] = useState(false)
+    const [rewardValue, setRewardValue] = useState(String(checkinReward || 10))
+    const [savingReward, setSavingReward] = useState(false)
 
     const lowStockCount = useMemo(() => {
         const threshold = Number.parseInt(thresholdValue, 10) || 5
@@ -122,6 +125,18 @@ export function AdminProductsContent({ products, stats, shopName, visitorCount, 
         }
     }
 
+    const handleSaveReward = async () => {
+        setSavingReward(true)
+        try {
+            await saveCheckinReward(rewardValue)
+            toast.success(t('common.success'))
+        } catch (e: any) {
+            toast.error(e.message)
+        } finally {
+            setSavingReward(false)
+        }
+    }
+
     return (
         <div className="space-y-6">
             {/* Shop Settings */}
@@ -139,25 +154,38 @@ export function AdminProductsContent({ products, stats, shopName, visitorCount, 
                             placeholder={t('admin.settings.shopNamePlaceholder')}
                         />
                     </div>
-                    <div className="grid gap-2 md:max-w-xl">
-                        <Label htmlFor="low-stock-threshold">{t('admin.settings.lowStockThreshold')}</Label>
-                        <Input
-                            id="low-stock-threshold"
-                            type="number"
-                            value={thresholdValue}
-                            onChange={(e) => setThresholdValue(e.target.value)}
-                            placeholder="5"
-                        />
-                    </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <Button onClick={handleSaveShopName} disabled={savingShopName}>
                             {savingShopName ? t('common.processing') : t('admin.settings.save')}
                         </Button>
-                        <Button variant="outline" onClick={handleSaveThreshold} disabled={savingThreshold}>
-                            {savingThreshold ? t('common.processing') : t('admin.settings.saveThreshold')}
-                        </Button>
-                        <p className="text-xs text-muted-foreground">{t('admin.settings.shopNameHint')}</p>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                className="w-20"
+                                value={thresholdValue}
+                                onChange={(e) => setThresholdValue(e.target.value)}
+                                placeholder="5"
+                                title={t('admin.settings.lowStockThreshold')}
+                            />
+                            <Button variant="outline" onClick={handleSaveThreshold} disabled={savingThreshold}>
+                                {savingThreshold ? t('common.processing') : t('admin.settings.saveThreshold')}
+                            </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                className="w-20"
+                                value={rewardValue}
+                                onChange={(e) => setRewardValue(e.target.value)}
+                                placeholder="10"
+                                title="Check-in Reward (Points)"
+                            />
+                            <Button variant="outline" onClick={handleSaveReward} disabled={savingReward}>
+                                {savingReward ? t('common.processing') : "Save Reward"}
+                            </Button>
+                        </div>
                     </div>
+                    <p className="text-xs text-muted-foreground">{t('admin.settings.shopNameHint')}</p>
                 </CardContent>
             </Card>
 
@@ -267,13 +295,13 @@ export function AdminProductsContent({ products, stats, shopName, visitorCount, 
                         <TableRow>
                             <TableHead className="w-[50px]">{t('admin.products.order')}</TableHead>
                             <TableHead>{t('admin.products.name')}</TableHead>
-                                <TableHead>{t('admin.products.price')}</TableHead>
-                                <TableHead>{t('admin.products.category')}</TableHead>
-                                <TableHead>{t('admin.products.hot')}</TableHead>
-                                <TableHead>{t('admin.products.stock')}</TableHead>
-                                <TableHead>{t('admin.products.status')}</TableHead>
-                                <TableHead className="text-right">{t('admin.products.actions')}</TableHead>
-                            </TableRow>
+                            <TableHead>{t('admin.products.price')}</TableHead>
+                            <TableHead>{t('admin.products.category')}</TableHead>
+                            <TableHead>{t('admin.products.hot')}</TableHead>
+                            <TableHead>{t('admin.products.stock')}</TableHead>
+                            <TableHead>{t('admin.products.status')}</TableHead>
+                            <TableHead className="text-right">{t('admin.products.actions')}</TableHead>
+                        </TableRow>
                     </TableHeader>
                     <TableBody>
                         {products.map((product, idx) => (
@@ -356,6 +384,6 @@ export function AdminProductsContent({ products, stats, shopName, visitorCount, 
                     </TableBody>
                 </Table>
             </div>
-        </div>
+        </div >
     )
 }

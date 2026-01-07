@@ -1,4 +1,5 @@
-import { pgTable, text, decimal, boolean, timestamp, serial, integer } from 'drizzle-orm/pg-core';
+import { pgTable, text, decimal, boolean, timestamp, serial, integer, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // Products
 export const products = pgTable('products', {
@@ -42,6 +43,7 @@ export const orders = pgTable('orders', {
     deliveredAt: timestamp('delivered_at'),
     userId: text('user_id'), // Changed to text to align with NextAuth IDs usually
     username: text('username'),
+    pointsUsed: integer('points_used').default(0),
     createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -49,9 +51,19 @@ export const orders = pgTable('orders', {
 export const loginUsers = pgTable('login_users', {
     userId: text('user_id').primaryKey(),
     username: text('username'),
+    points: integer('points').default(0).notNull(),
     createdAt: timestamp('created_at').defaultNow(),
     lastLoginAt: timestamp('last_login_at').defaultNow(),
 });
+
+// Daily Check-ins
+export const dailyCheckins = pgTable('daily_checkins', {
+    id: serial('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => loginUsers.userId, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (t) => ({
+    userDateUnique: uniqueIndex('daily_checkins_user_date_unique').on(t.userId, sql`date(${t.createdAt})`),
+}));
 
 // NextAuth Tables (Optional, if using adapter)
 /* 

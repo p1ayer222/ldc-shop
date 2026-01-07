@@ -187,7 +187,11 @@ export function BuyContent({
                                 {isLoggedIn ? (
                                     stockCount > 0 ? (
                                         <div className="w-full sm:w-auto">
-                                            <BuyButton productId={product.id} />
+                                            <BuyButton
+                                                productId={product.id}
+                                                price={product.price}
+                                                productName={product.name}
+                                            />
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-2 text-destructive">

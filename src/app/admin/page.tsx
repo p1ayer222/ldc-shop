@@ -5,7 +5,7 @@ import { getProducts, getDashboardStats, getSetting, getVisitorCount } from "@/l
 import { AdminProductsContent } from "@/components/admin/products-content"
 
 export default async function AdminPage() {
-    const [products, stats, shopName, visitorCount, lowStockThreshold, recentOrders] = await Promise.all([
+    const [products, stats, shopName, visitorCount, lowStockThreshold, recentOrders, checkinReward] = await Promise.all([
         getProducts(),
         getDashboardStats(),
         (async () => {
@@ -37,6 +37,15 @@ export default async function AdminPage() {
                 return []
             }
         })(),
+
+        (async () => {
+            try {
+                const v = await getSetting('checkin_reward')
+                return Number.parseInt(v || '10', 10) || 10
+            } catch {
+                return 10
+            }
+        })(),
     ])
 
     return (
@@ -63,6 +72,7 @@ export default async function AdminPage() {
                 status: o.status || 'pending',
                 createdAt: o.createdAt
             }))}
+            checkinReward={checkinReward}
         />
     )
 }
