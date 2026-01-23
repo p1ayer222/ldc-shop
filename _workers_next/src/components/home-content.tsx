@@ -2,6 +2,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -259,13 +260,13 @@ export function HomeContent({ products, announcement, visitorCount, categories =
                                 />
                                 {/* Image Section with aspect ratio tweak */}
                                 <div className="block aspect-[16/10] bg-gradient-to-br from-muted/30 to-muted/10 relative overflow-hidden group-hover:opacity-90">
-                                    <img
+                                    <Image
                                         src={product.image || `https://api.dicebear.com/7.x/shapes/svg?seed=${product.id}`}
                                         alt={product.name}
-                                        loading={index < 2 ? "eager" : "lazy"}
-                                        decoding="async"
-                                        fetchPriority={index < 2 ? "high" : "auto"}
-                                        className="object-contain w-full h-full transition-transform duration-700 ease-out group-hover:scale-105"
+                                        fill
+                                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                        priority={index < 2}
+                                        className="object-contain transition-transform duration-700 ease-out group-hover:scale-105"
                                     />
                                     {/* Overlay gradient */}
                                     <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

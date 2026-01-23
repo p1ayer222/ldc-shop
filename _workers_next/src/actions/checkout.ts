@@ -275,19 +275,22 @@ export async function createOrder(productId: string, quantity: number = 1, email
                             .where(and(eq(orders.orderId, candidateOrderId!), eq(orders.status, 'pending')));
                         continue
                     } else {
-                        // Steal the expired card
-                        await db.update(cards)
-                            .set({ reservedOrderId: orderId, reservedAt: new Date() })
-                            .where(eq(cards.id, candidateCardId));
+                        // Steal the expired card only if it is still expired and unchanged
+                        const now = new Date();
+                        const updated = await db.update(cards)
+                            .set({ reservedOrderId: orderId, reservedAt: now })
+                            .where(and(
+                                eq(cards.id, candidateCardId),
+                                or(eq(cards.isUsed, false), isNull(cards.isUsed)),
+                                lt(cards.reservedAt, fiveMinutesAgo),
+                                candidateOrderId
+                                    ? eq(cards.reservedOrderId, candidateOrderId)
+                                    : isNull(cards.reservedOrderId)
+                            ))
+                            .returning({ id: cards.id, cardKey: cards.cardKey });
 
-                        // Verify we got it
-                        const stolen = await db.select({ id: cards.id, cardKey: cards.cardKey })
-                            .from(cards)
-                            .where(and(eq(cards.id, candidateCardId), eq(cards.reservedOrderId, orderId)))
-                            .limit(1);
-
-                        if (stolen.length > 0) {
-                            reservedCards.push({ id: stolen[0].id, key: stolen[0].cardKey });
+                        if (updated.length > 0) {
+                            reservedCards.push({ id: updated[0].id, key: updated[0].cardKey });
                             success = true;
                         }
                     }

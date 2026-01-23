@@ -179,12 +179,6 @@ export async function addCards(formData: FormData) {
 
     if (cardList.length === 0) return
 
-    try {
-        await db.run(sql`DROP INDEX IF EXISTS cards_product_id_card_key_uq;`)
-    } catch {
-        // best effort
-    }
-
     // D1 has a limit on SQL variables (around 100 bindings per query)
     // Drizzle generates bindings for all columns (~8), so 100/8 ≈ 12 max
     const BATCH_SIZE = 10

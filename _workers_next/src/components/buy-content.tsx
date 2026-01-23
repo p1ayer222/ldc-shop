@@ -22,6 +22,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { Loader2, Minus, Plus, Share2 } from "lucide-react"
 import { toast } from "sonner"
+import Image from "next/image"
 
 interface Product {
     id: string
@@ -163,10 +164,12 @@ export function BuyContent({
                     <CardContent className="space-y-6">
                         {/* Product Image */}
                         <div className="aspect-video relative bg-gradient-to-br from-muted/20 to-muted/5 rounded-xl overflow-hidden flex items-center justify-center border border-border/30">
-                            <img
+                            <Image
                                 src={product.image || `https://api.dicebear.com/7.x/shapes/svg?seed=${product.id}`}
                                 alt={product.name}
-                                className="max-w-full max-h-full object-contain"
+                                fill
+                                sizes="(max-width: 768px) 100vw, 700px"
+                                className="object-contain"
                             />
                             {/* Corner accents */}
                             <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary/30 rounded-tl-xl" />

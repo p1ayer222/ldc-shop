@@ -302,6 +302,39 @@
 }
 
 /* ======================================
+   PERFORMANCE FALLBACKS
+   ====================================== */
+@media (max-width: 640px) {
+  .glass {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .tech-card {
+    backdrop-filter: none;
+  }
+
+  .tech-card:hover {
+    box-shadow: 0 10px 20px -12px oklch(0.5 0.2 270 / 0.12);
+  }
+
+  .glow-border,
+  .glow-border-hover:hover {
+    box-shadow:
+      0 0 12px -6px var(--glow-primary),
+      inset 0 0 12px -8px var(--glow-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-glow,
+  .animate-fade-in,
+  .animate-shimmer {
+    animation: none;
+  }
+}
+
+/* ======================================
    ANIMATIONS
    ====================================== */
 @keyframes pulse-glow {

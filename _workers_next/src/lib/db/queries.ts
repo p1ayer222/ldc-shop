@@ -8,7 +8,15 @@ import { cache } from "react";
 let dbInitialized = false;
 let loginUsersSchemaReady = false;
 let wishlistTablesReady = false;
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
+
+async function ensureCardKeyDuplicatesAllowed() {
+    try {
+        await db.run(sql`DROP INDEX IF EXISTS cards_product_id_card_key_uq;`);
+    } catch {
+        // best effort
+    }
+}
 
 async function safeAddColumn(table: string, column: string, definition: string) {
     try {
@@ -99,6 +107,7 @@ async function ensureDatabaseInitialized() {
         // IMPORTANT: Even if table exists, ensure columns exist!
         await ensureProductsColumns();
         await ensureOrdersColumns();
+        await ensureCardKeyDuplicatesAllowed();
         await ensureLoginUsersTable();
         await ensureLoginUsersColumns(); // Add this call
         loginUsersSchemaReady = true;
@@ -1313,6 +1322,8 @@ async function ensureBroadcastTables() {
             created_at INTEGER DEFAULT (unixepoch() * 1000)
         );
     `);
+
+    await ensureCardKeyDuplicatesAllowed();
 }
 
 async function ensureWishlistTables() {

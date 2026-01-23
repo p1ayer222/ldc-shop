@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { loginUsers } from "@/lib/db/schema"
 import { ensureLoginUsersSchema, getSetting } from "@/lib/db/queries"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 export async function checkIn() {
@@ -23,54 +23,47 @@ export async function checkIn() {
 
     try {
         await ensureLoginUsersSchema()
-        // Get user state
-        const user = await db.query.loginUsers.findFirst({
-            where: eq(loginUsers.userId, userId),
-            columns: {
-                lastCheckinAt: true,
-                consecutiveDays: true,
-                points: true
-            }
-        })
-
-        if (!user) {
-            // Should not happen for logged in user, but just in case
-            return { success: false, error: "User record not found" }
-        }
-
-        const now = Date.now()
-        // Use UTC date boundaries to ensure consistency
-        const lastCheckin = user.lastCheckinAt ? new Date(user.lastCheckinAt) : new Date(0);
-        const lastCheckinDate = lastCheckin.toISOString().split('T')[0];
-        const todayDate = new Date().toISOString().split('T')[0];
-
-        if (lastCheckinDate === todayDate && user.lastCheckinAt) {
-            return { success: false, error: "Already checked in today" }
-        }
-
-        // Calculate consecutive days
-        const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-        let newConsecutiveDays = 1;
-
-        if (lastCheckinDate === yesterdayDate) {
-            newConsecutiveDays = (user.consecutiveDays || 0) + 1;
-        }
+        const nowMs = Date.now()
+        const nowDate = new Date(nowMs)
+        const todayStartUtcMs = Date.UTC(
+            nowDate.getUTCFullYear(),
+            nowDate.getUTCMonth(),
+            nowDate.getUTCDate()
+        )
+        const yesterdayStartUtcMs = todayStartUtcMs - 86400000
 
         // 2. Get Reward Amount
         const rewardStr = await getSetting('checkin_reward')
         const reward = parseInt(rewardStr || '10', 10)
 
-        // 3. Perform Check-in & Award Points
-        await db.update(loginUsers)
+        // 3. Perform Check-in & Award Points (atomic guard in DB)
+        const updated = await db.update(loginUsers)
             .set({
                 points: sql`${loginUsers.points} + ${reward}`,
-                lastCheckinAt: new Date(),
-                consecutiveDays: newConsecutiveDays
+                lastCheckinAt: new Date(nowMs),
+                consecutiveDays: sql`CASE 
+                    WHEN ${loginUsers.lastCheckinAt} IS NOT NULL 
+                        AND ${loginUsers.lastCheckinAt} >= ${yesterdayStartUtcMs}
+                        AND ${loginUsers.lastCheckinAt} < ${todayStartUtcMs}
+                    THEN COALESCE(${loginUsers.consecutiveDays}, 0) + 1
+                    ELSE 1
+                END`
             })
-            .where(eq(loginUsers.userId, userId))
+            .where(and(
+                eq(loginUsers.userId, userId),
+                or(
+                    isNull(loginUsers.lastCheckinAt),
+                    lt(loginUsers.lastCheckinAt, new Date(todayStartUtcMs))
+                )
+            ))
+            .returning({ consecutiveDays: loginUsers.consecutiveDays });
+
+        if (!updated.length) {
+            return { success: false, error: "Already checked in today" }
+        }
 
         revalidatePath('/')
-        return { success: true, points: reward, consecutiveDays: newConsecutiveDays }
+        return { success: true, points: reward, consecutiveDays: updated[0]?.consecutiveDays ?? 1 }
     } catch (error: any) {
         console.error("Check-in error:", error)
         return { success: false, error: `Check-in failed: ${error?.message || 'Unknown error'}` }
